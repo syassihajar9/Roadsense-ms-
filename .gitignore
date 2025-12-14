@@ -1,0 +1,20 @@
+# Environnements virtuels
+venv/
+.env/
+__pycache__/
+
+# Python
+*.pyc
+
+# Node
+node_modules/
+
+# Fichiers lourds ML
+*.pt
+*.pth
+*.dll
+*.pyd
+*.lib
+
+# OS
+.DS_Store

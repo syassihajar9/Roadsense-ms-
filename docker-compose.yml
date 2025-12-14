@@ -1,0 +1,113 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: roadsense-postgres
+    environment:
+      POSTGRES_USER: roadsense
+      POSTGRES_PASSWORD: roadsense
+      POSTGRES_DB: roadsense
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./infra/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - roadsense-net
+
+  minio:
+    image: minio/minio
+    container_name: roadsense-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - roadsense-net
+
+  ingestion-video:
+    build:
+      context: ./ingestion-video
+      dockerfile: Dockerfile
+    container_name: roadsense-ingestion
+    environment:
+      DATABASE_URL: postgres://roadsense:roadsense@postgres:5432/roadsense?sslmode=disable
+    depends_on:
+      - postgres
+      - minio
+    ports:
+      - "8080:8080"
+    networks:
+      - roadsense-net
+
+  detection-fissures:
+    build:
+      context: ./detection-fissures
+      dockerfile: Dockerfile
+    container_name: detection-fissures
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./detection-fissures/uploads:/app/uploads
+      - ./detection-fissures/results:/app/results
+    depends_on:
+      - postgres
+    networks:
+      - roadsense-net
+
+  georef:
+    build:
+      context: ./georef
+      dockerfile: Dockerfile
+    container_name: roadsense-georef
+    ports:
+      - "9003:9003"
+    depends_on:
+      - postgres
+    networks:
+      - roadsense-net
+
+  score-gravite:
+    build:
+      context: ./score-gravite
+      dockerfile: Dockerfile
+    container_name: roadsense-score
+    ports:
+      - "9004:9004"
+    depends_on:
+      - postgres
+    networks:
+      - roadsense-net
+
+  prioritisation:
+    build:
+      context: ./prioritisation
+      dockerfile: Dockerfile
+    container_name: roadsense-prioritisation
+    ports:
+      - "9005:9005"
+    depends_on:
+      - postgres
+    networks:
+      - roadsense-net
+
+  export-sig:
+    build:
+      context: ./export-sig
+      dockerfile: Dockerfile
+    container_name: roadsense-export
+    ports:
+      - "9006:9006"
+    depends_on:
+      - postgres
+    networks:
+      - roadsense-net
+
+volumes:
+  minio-data:
+
+networks:
+  roadsense-net:
