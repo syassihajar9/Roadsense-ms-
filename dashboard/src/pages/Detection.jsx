@@ -13,30 +13,7 @@ export default function Detection() {
   const [scoreResult, setScoreResult] = useState(null);
   const [scoreLoading, setScoreLoading] = useState(false);
   const [mapPoints, setMapPoints] = useState([]);
-  /* =========================
-   Charger TOUS les dommages depuis PostGIS
-========================= */
-useEffect(() => {
-fetch("http://roadsense-georef:9003/damages")
-    .then((res) => {
-      if (!res.ok) throw new Error("Erreur chargement damages");
-      return res.json();
-    })
-    .then((json) => {
-      setMapPoints(
-        json.damages.map((d) => ({
-          lat: d.latitude,
-          lon: d.longitude,
-          image_id: d.image_id,
-          score: d.score,
-          priorite: d.priorite,
-        }))
-      );
-    })
-    .catch((err) =>
-      console.error("❌ Erreur chargement carte :", err)
-    );
-}, []);
+
 
 
 
@@ -73,6 +50,7 @@ fetch("http://roadsense-georef:9003/damages")
 
       const json = await res.json();
       console.log("✅ Résultat détection :", json);
+      
       const normalizedData = {
   image_id: json.image_id,
   damages: json.damages ?? json.detections ?? [],
@@ -83,7 +61,6 @@ fetch("http://roadsense-georef:9003/damages")
 };
 
 setData(normalizedData);
-(json);
     } catch (err) {
       console.error("❌ Erreur détection :", err);
       alert("Erreur lors de l'analyse (voir console)");
@@ -125,6 +102,7 @@ setData(normalizedData);
         lon: -7.5898,
         lat: 33.5731,
       };
+      localStorage.setItem("last_detection", JSON.stringify(payload));
 
       const res = await fetch(`${API_URLS.score}/score`, {
         method: "POST",
@@ -145,6 +123,19 @@ setScoreResult({
   priorite: json.score_result.priorite,
   location: { lat, lon },
 });
+// 🔑 SAUVEGARDE POUR LA PAGE GÉORÉFÉRENCEMENT
+localStorage.setItem(
+  "last_georef",
+  JSON.stringify([
+    {
+      lat,
+      lon,
+      image_id: data.image_id,
+      score: json.score_result.score,
+      priorite: json.score_result.priorite,
+    },
+  ])
+);
 
 // ✅ AJOUT AUTOMATIQUE SUR LA CARTE
 if (Number.isFinite(lat) && Number.isFinite(lon)) {
@@ -191,7 +182,6 @@ if (Number.isFinite(lat) && Number.isFinite(lon)) {
     <div className="max-w-7xl mx-auto p-6 space-y-8 text-slate-100">
       <h1 className="text-3xl font-bold">
         Détection des dommages routiers
-        <span className="text-blue-400 ml-2">YOLOv8</span>
       </h1>
 
       {/* Upload */}

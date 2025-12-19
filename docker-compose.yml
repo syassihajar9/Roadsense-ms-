@@ -1,4 +1,7 @@
 services:
+  # =========================
+  # DATABASE (PostGIS)
+  # =========================
   postgres:
     image: postgis/postgis:16-3.4
     container_name: roadsense-postgres
@@ -12,7 +15,15 @@ services:
       - ./infra/db/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - roadsense-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U roadsense"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
+  # =========================
+  # OBJECT STORAGE (MinIO)
+  # =========================
   minio:
     image: minio/minio
     container_name: roadsense-minio
@@ -28,25 +39,45 @@ services:
     networks:
       - roadsense-net
 
+  # =========================
+  # CORE API
+  # =========================
+  roadsense-core:
+    build: ./roadsense-core
+    container_name: roadsense-core
+    ports:
+      - "8001:8000"
+    environment:
+      DATABASE_URL: postgresql://roadsense:roadsense@postgres:5432/roadsense
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - roadsense-net
+
+  # =========================
+  # INGESTION VIDEO
+  # =========================
   ingestion-video:
-    build:
-      context: ./ingestion-video
-      dockerfile: Dockerfile
+    build: ./ingestion-video
     container_name: roadsense-ingestion
     environment:
-      DATABASE_URL: postgres://roadsense:roadsense@postgres:5432/roadsense?sslmode=disable
+      DATABASE_URL: postgresql://roadsense:roadsense@postgres:5432/roadsense
     depends_on:
-      - postgres
-      - minio
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
     ports:
       - "8080:8080"
     networks:
       - roadsense-net
 
+  # =========================
+  # DETECTION FISSURES
+  # =========================
   detection-fissures:
-    build:
-      context: ./detection-fissures
-      dockerfile: Dockerfile
+    build: ./detection-fissures
     container_name: detection-fissures
     ports:
       - "8000:8000"
@@ -54,55 +85,66 @@ services:
       - ./detection-fissures/uploads:/app/uploads
       - ./detection-fissures/results:/app/results
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - roadsense-net
 
+  # =========================
+  # GEOREFERENCEMENT
+  # =========================
   georef:
-    build:
-      context: ./georef
-      dockerfile: Dockerfile
+    build: ./georef
     container_name: roadsense-georef
     ports:
       - "9003:9003"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - roadsense-net
 
+  # =========================
+  # SCORE GRAVITE
+  # =========================
   score-gravite:
-    build:
-      context: ./score-gravite
-      dockerfile: Dockerfile
+    build: ./score-gravite
     container_name: roadsense-score
     ports:
       - "9004:9004"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - roadsense-net
 
+  # =========================
+  # PRIORITISATION
+  # =========================
   prioritisation:
-    build:
-      context: ./prioritisation
-      dockerfile: Dockerfile
+    build: ./prioritisation
     container_name: roadsense-prioritisation
     ports:
       - "9005:9005"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - roadsense-net
 
+  # =========================
+  # EXPORT SIG
+  # =========================
   export-sig:
-    build:
-      context: ./export-sig
-      dockerfile: Dockerfile
+    build: ./export-sig
     container_name: roadsense-export
     ports:
       - "9006:9006"
+    environment:
+      DATABASE_URL: postgresql://roadsense:roadsense@postgres:5432/roadsense
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - roadsense-net
 
@@ -111,3 +153,4 @@ volumes:
 
 networks:
   roadsense-net:
+    driver: bridge

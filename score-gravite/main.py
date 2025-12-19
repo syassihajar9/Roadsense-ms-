@@ -1,3 +1,5 @@
+# main.py
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -6,23 +8,27 @@ from typing import List
 from datetime import datetime
 from collections import defaultdict
 
+from simulation import calculate_cost, future_risk, recommendation
+
+# =========================
+# APP
+# =========================
 app = FastAPI(title="Score Gravité Service")
 
 # =========================
-# CORS (CORRIGÉ)
+# CORS
 # =========================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # ✅ CORS ouvert (DEV)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # =========================
-# SERVICES URL (DOCKER)
+# SERVICES URL
 # =========================
-PRIORITISATION_URL = "http://roadsense-prioritisation:9005/prioritise"
 GEOREF_URL = "http://roadsense-georef:9003/georef"
 
 # =========================
@@ -35,7 +41,7 @@ MIN_SURFACE_REF = 10000
 SCORE_HISTORY = defaultdict(list)
 
 # =========================
-# MODELE D'ENTREE
+# MODELES D'ENTREE
 # =========================
 class ScoreRequest(BaseModel):
     image_id: str
@@ -45,13 +51,18 @@ class ScoreRequest(BaseModel):
     lon: float
     lat: float
 
+
+class SimulationRequest(BaseModel):
+    damage_type: str
+    severity: float
+
 # =========================
 # REGLES METIER
 # =========================
 CLASS_LABELS = {
-    0: "Pothole",
-    1: "Crack",
-    2: "Open_Manhole"
+    0: "pothole",
+    1: "crack",
+    2: "open_manhole"
 }
 
 CLASS_BASE_SCORE = {
@@ -63,7 +74,7 @@ CLASS_BASE_SCORE = {
 # =========================
 # CALCUL SCORE
 # =========================
-def compute_score(data: ScoreRequest):
+def compute_score(data: ScoreRequest) -> float:
     type_score = CLASS_BASE_SCORE.get(data.class_id, 30)
     confidence_score = data.confidence * 100
 
@@ -81,26 +92,18 @@ def compute_score(data: ScoreRequest):
 
     surface_score = min(surface / surface_ref, 1.0) * 100
 
-    base_score = (
+    return (
         0.4 * type_score +
         0.2 * confidence_score +
         0.4 * surface_score
     )
-
-    explanation = {
-        "type": CLASS_LABELS.get(data.class_id, "Unknown"),
-        "confidence": round(confidence_score, 1),
-        "surface": round(surface_score, 1)
-    }
-
-    return base_score, explanation
 
 # =========================
 # PENALITE TEMPORELLE
 # =========================
 def temporal_penalty(history: list) -> float:
     if not history:
-        return 0
+        return 0.0
 
     first_time = datetime.fromisoformat(history[0]["timestamp"])
     now = datetime.utcnow()
@@ -136,8 +139,11 @@ def send_to_georef(image_id: str, lon: float, lat: float):
             timeout=3
         )
         return response.json()
-    except Exception as e:
-        return {"error": "georef unreachable", "details": str(e)}
+    except Exception:
+        return {
+            "latitude": lat,
+            "longitude": lon
+        }
 
 # =========================
 # ROUTES
@@ -146,55 +152,73 @@ def send_to_georef(image_id: str, lon: float, lat: float):
 def health():
     return {"status": "score-gravite running"}
 
+# =========================
+# SCORE + SIMULATION
+# =========================
 @app.post("/score")
 def score_gravite(data: ScoreRequest):
 
-    # 1️⃣ Calcul score
-    base_score, explanation = compute_score(data)
+    # 1️⃣ Score brut
+    base_score = compute_score(data)
 
     history = SCORE_HISTORY[data.image_id]
     penalty = temporal_penalty(history)
 
     final_score = min(round(base_score + penalty, 1), 100)
+    final_score_int = int(final_score)
+
     priorite = priority(final_score)
 
-    timestamp = datetime.utcnow().isoformat()
     SCORE_HISTORY[data.image_id].append({
-        "timestamp": timestamp,
-        "score": final_score,
+        "timestamp": datetime.utcnow().isoformat(),
+        "score": final_score_int,
         "priorite": priorite
     })
 
-    # 2️⃣ Appel GEOREF
+    # 2️⃣ Géoréférencement
     georef_result = send_to_georef(
         image_id=data.image_id,
         lon=data.lon,
         lat=data.lat
     )
 
-    # 3️⃣ Payload vers priorisation
+    # 3️⃣ Résultat score
     score_payload = {
         "image_id": data.image_id,
-        "score": final_score,
+        "score": final_score_int,
         "priorite": priorite,
         "location": georef_result
     }
 
-    try:
-        response = requests.post(
-            PRIORITISATION_URL,
-            json=score_payload,
-            timeout=3
-        )
-        prioritisation_result = response.json()
-    except Exception as e:
-        return {
-            "error": "prioritisation unreachable",
-            "score_result": score_payload,
-            "details": str(e)
-        }
+    # 4️⃣ SIMULATION (clé compatible frontend ✅)
+    simulation = {
+        "estimated_cost": calculate_cost(
+            CLASS_LABELS.get(data.class_id, "pothole"),
+            final_score_int
+        ),
+        "risk_30_days": future_risk(final_score_int, 30),
+        "risk_60_days": future_risk(final_score_int, 60),
+        "recommendation": recommendation(final_score_int)
+    }
 
     return {
         "score_result": score_payload,
-        "prioritisation": prioritisation_result
+        "simulation": simulation
+    }
+
+# =========================
+# SIMULATION SEULE
+# =========================
+@app.post("/simulate-cost-impact")
+def simulate_cost_impact(data: SimulationRequest):
+
+    severity_int = int(data.severity)
+
+    return {
+        "damage_type": data.damage_type,
+        "severity_now": severity_int,
+        "estimated_cost": calculate_cost(data.damage_type, severity_int),
+        "risk_30_days": future_risk(severity_int, 30),
+        "risk_60_days": future_risk(severity_int, 60),
+        "recommendation": recommendation(severity_int)
     }

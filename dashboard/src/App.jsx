@@ -7,6 +7,7 @@ import Georef from "./pages/Georef";
 import Score from "./pages/Score";
 import Priorisation from "./pages/Priorisation";
 import ExportSIG from "./pages/ExportSIG";
+import Decision from "./pages/Decision"; // ✅
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
               <Route path="/georef" element={<Georef />} />
               <Route path="/score" element={<Score />} />
               <Route path="/priorisation" element={<Priorisation />} />
+              <Route path="/decision" element={<Decision />} /> {/* ✅ */}
               <Route path="/export" element={<ExportSIG />} />
             </Routes>
           </section>

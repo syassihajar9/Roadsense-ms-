@@ -7,15 +7,17 @@ import {
     FaListOl,
     FaGlobe,
     FaTachometerAlt,
+    FaBalanceScale   // 👈 NOUVELLE ICÔNE
 } from "react-icons/fa";
 
 const navItems = [
-    { to: "/", label: "Dashboard", icon: <FaTachometerAlt /> },
-    { to: "/upload", label: "Upload vidéo", icon: <FaUpload /> },
     { to: "/detect", label: "Détection fissures", icon: <FaSearch /> },
     { to: "/georef", label: "Géoréférencement", icon: <FaMapMarkerAlt /> },
     { to: "/score", label: "Score de gravité", icon: <FaChartBar /> },
-    { to: "/priorisation", label: "Priorisation", icon: <FaListOl /> },
+
+    // ✅ NOUVELLE FONCTIONNALITÉ
+    { to: "/decision", label: "Aide à la décision", icon: <FaBalanceScale /> },
+
     { to: "/export", label: "Export SIG", icon: <FaGlobe /> },
 ];
 
